@@ -13644,6 +13644,212 @@ process.chdir = function (dir) {
 process.umask = function() { return 0; };
 
 },{}],7:[function(require,module,exports){
+(function (__dirname){
+/*! sass.js - v0.10.9 (3e41106) - built 2018-02-06
+  providing libsass 3.4.9 (6de5050d)
+  via emscripten 1.37.33 ()
+ */
+
+(function (root, factory) {
+  'use strict';
+  if (typeof define === 'function' && define.amd) {
+    define([], factory);
+  } else if (typeof exports === 'object') {
+    module.exports = factory();
+  } else {
+    root.Sass = factory();
+  }
+}(this, function () {/*global document*/
+// identify the path sass.js is located at in case we're loaded by a simple
+// <script src="path/to/sass.js"></script>
+// this path can be used to identify the location of
+// * sass.worker.js from sass.js
+// * libsass.js.mem from sass.sync.js
+// see https://github.com/medialize/sass.js/pull/32#issuecomment-103142214
+// see https://github.com/medialize/sass.js/issues/33
+var SASSJS_RELATIVE_PATH = (function() {
+  'use strict';
+
+  // in Node things are rather simple
+  if (typeof __dirname !== 'undefined') {
+    return __dirname;
+  }
+
+  // we can only run this test in the browser,
+  // so make sure we actually have a DOM to work with.
+  if (typeof document === 'undefined' || !document.getElementsByTagName) {
+    return null;
+  }
+
+  // http://www.2ality.com/2014/05/current-script.html
+  var currentScript = document.currentScript || (function() {
+    var scripts = document.getElementsByTagName('script');
+    return scripts[scripts.length - 1];
+  })();
+
+  var path = currentScript && currentScript.src;
+  if (!path) {
+    return null;
+  }
+
+  // [worker] make sure we're not running in some concatenated thing
+  if (path.slice(-8) === '/sass.js') {
+    return path.slice(0, -8);
+  }
+
+  // [sync] make sure we're not running in some concatenated thing
+  if (path.slice(-13) === '/sass.sync.js') {
+    return path.slice(0, -13);
+  }
+
+  return null;
+})() || '.';
+
+/*global Worker, SASSJS_RELATIVE_PATH*/
+'use strict';
+
+var noop = function(){};
+var slice = [].slice;
+// defined upon first Sass.initialize() call
+var globalWorkerUrl;
+
+function Sass(workerUrl) {
+  if (!workerUrl && !globalWorkerUrl) {
+    /*jshint laxbreak:true */
+    throw new Error(
+      'Sass needs to be initialized with the URL of sass.worker.js - '
+      + 'either via Sass.setWorkerUrl(url) or by new Sass(url)'
+    );
+    /*jshint laxbreak:false */
+  }
+
+  if (!globalWorkerUrl) {
+    globalWorkerUrl = workerUrl;
+  }
+
+  // bind all functions
+  // we're doing this because we used to have a single hard-wired instance that allowed
+  // [].map(Sass.removeFile) and we need to maintain that for now (at least until 1.0.0)
+  for (var key in this) {
+    if (typeof this[key] === 'function') {
+      this[key] = this[key].bind(this);
+    }
+  }
+
+  this._callbacks = {};
+  this._worker = new Worker(workerUrl || globalWorkerUrl);
+  this._worker.addEventListener('message', this._handleWorkerMessage, false);
+}
+
+// allow setting the workerUrl before the first Sass instance is initialized,
+// where registering the global workerUrl would've happened automatically
+Sass.setWorkerUrl = function(workerUrl) {
+  globalWorkerUrl = workerUrl;
+};
+
+Sass.style = {
+  nested: 0,
+  expanded: 1,
+  compact: 2,
+  compressed: 3
+};
+
+Sass.comments = {
+  'none': 0,
+  'default': 1
+};
+
+Sass.prototype = {
+  style: Sass.style,
+  comments: Sass.comments,
+
+  destroy: function() {
+    this._worker && this._worker.terminate();
+    this._worker = null;
+    this._callbacks = {};
+    this._importer = null;
+  },
+
+  _handleWorkerMessage: function(event) {
+    if (event.data.command) {
+      this[event.data.command](event.data.args);
+    }
+
+    this._callbacks[event.data.id] && this._callbacks[event.data.id](event.data.result);
+    delete this._callbacks[event.data.id];
+  },
+
+  _dispatch: function(options, callback) {
+    if (!this._worker) {
+      throw new Error('Sass worker has been terminated');
+    }
+
+    options.id = 'cb' + Date.now() + Math.random();
+    this._callbacks[options.id] = callback;
+    this._worker.postMessage(options);
+  },
+
+  _importerInit: function(args) {
+    // importer API done callback pushing results
+    // back to the worker
+    var done = function done(result) {
+      this._worker.postMessage({
+        command: '_importerFinish',
+        args: [result]
+      });
+    }.bind(this);
+
+    try {
+      this._importer(args[0], done);
+    } catch(e) {
+      done({ error: e.message });
+      throw e;
+    }
+  },
+
+  importer: function(importerCallback, callback) {
+    if (typeof importerCallback !== 'function' && importerCallback !== null) {
+      throw new Error('importer callback must either be a function or null');
+    }
+
+    // callback is executed in the main EventLoop
+    this._importer = importerCallback;
+    // tell worker to activate importer callback
+    this._worker.postMessage({
+      command: 'importer',
+      args: [Boolean(importerCallback)]
+    });
+
+    callback && callback();
+  },
+};
+
+var commands = 'writeFile readFile listFiles removeFile clearFiles lazyFiles preloadFiles options compile compileFile';
+commands.split(' ').forEach(function(command) {
+  Sass.prototype[command] = function() {
+    var callback = slice.call(arguments, -1)[0];
+    var args = slice.call(arguments, 0, -1);
+    if (typeof callback !== 'function') {
+      args.push(callback);
+      callback = noop;
+    }
+
+    this._dispatch({
+      command: command,
+      args: args
+    }, callback);
+  };
+});
+
+// automatically set the workerUrl in case we're loaded by a simple
+// <script src="path/to/sass.js"></script>
+// see https://github.com/medialize/sass.js/pull/32#issuecomment-103142214
+Sass.setWorkerUrl(SASSJS_RELATIVE_PATH + '/sass.worker.js');
+return Sass;
+}));
+}).call(this,"/../../../node_modules/sass.js/dist")
+
+},{}],8:[function(require,module,exports){
 /*!
   * vue-script2 v2.0.1
   * (c) 2016-2017 Greg Slepak
@@ -13788,7 +13994,7 @@ process.umask = function() { return 0; };
   return Script2;
 
 }));
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -13900,7 +14106,7 @@ Vue.component("add-item-to-basket-overlay", {
     }
 });
 
-},{"services/ModalService":115}],9:[function(require,module,exports){
+},{"services/ModalService":117}],10:[function(require,module,exports){
 "use strict";
 
 var _ExceptionMap = require("exceptions/ExceptionMap");
@@ -14027,7 +14233,7 @@ Vue.component("add-to-basket", {
     }
 });
 
-},{"exceptions/ExceptionMap":89,"services/NotificationService":116,"services/TranslationService":117}],10:[function(require,module,exports){
+},{"exceptions/ExceptionMap":91,"services/NotificationService":118,"services/TranslationService":119}],11:[function(require,module,exports){
 "use strict";
 
 var _ApiService = require("services/ApiService");
@@ -14075,7 +14281,7 @@ Vue.component("basket-preview", {
     }
 });
 
-},{"services/ApiService":111}],11:[function(require,module,exports){
+},{"services/ApiService":113}],12:[function(require,module,exports){
 "use strict";
 
 Vue.component("basket-totals", {
@@ -14110,7 +14316,7 @@ Vue.component("basket-totals", {
     }
 });
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -14231,7 +14437,7 @@ Vue.component("coupon", {
     }
 });
 
-},{"services/NotificationService":116,"services/TranslationService":117}],13:[function(require,module,exports){
+},{"services/NotificationService":118,"services/TranslationService":119}],14:[function(require,module,exports){
 "use strict";
 
 Vue.component("basket-list", {
@@ -14254,7 +14460,7 @@ Vue.component("basket-list", {
     }
 });
 
-},{}],14:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -14367,7 +14573,7 @@ Vue.component("basket-list-item", {
     }
 });
 
-},{"exceptions/ExceptionMap":89,"services/NotificationService":116,"services/TranslationService":117}],15:[function(require,module,exports){
+},{"exceptions/ExceptionMap":91,"services/NotificationService":118,"services/TranslationService":119}],16:[function(require,module,exports){
 "use strict";
 
 Vue.component("category-breadcrumbs", {
@@ -14382,7 +14588,7 @@ Vue.component("category-breadcrumbs", {
     }
 });
 
-},{}],16:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 "use strict";
 
 Vue.component("accept-gtc-check", {
@@ -14425,7 +14631,7 @@ Vue.component("accept-gtc-check", {
     }
 });
 
-},{}],17:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 "use strict";
 
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
@@ -14569,7 +14775,7 @@ Vue.component("checkout", {
     }
 });
 
-},{"services/ApiService":111,"services/NotificationService":116,"services/TranslationService":117}],18:[function(require,module,exports){
+},{"services/ApiService":113,"services/NotificationService":118,"services/TranslationService":119}],19:[function(require,module,exports){
 "use strict";
 
 Vue.component("contact-wish-input", {
@@ -14593,7 +14799,7 @@ Vue.component("contact-wish-input", {
     }
 });
 
-},{}],19:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 "use strict";
 
 Vue.component("payment-provider-select", {
@@ -14647,7 +14853,7 @@ Vue.component("payment-provider-select", {
     }
 });
 
-},{}],20:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 "use strict";
 
 var _TranslationService = require("services/TranslationService");
@@ -14789,7 +14995,7 @@ Vue.component("place-order", {
     }
 });
 
-},{"services/ApiService":111,"services/NotificationService":116,"services/TranslationService":117}],21:[function(require,module,exports){
+},{"services/ApiService":113,"services/NotificationService":118,"services/TranslationService":119}],22:[function(require,module,exports){
 "use strict";
 
 Vue.component("shipping-profile-select", {
@@ -14846,7 +15052,53 @@ Vue.component("shipping-profile-select", {
     }
 });
 
-},{}],22:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
+"use strict";
+
+var _sass = require("sass.js/dist/sass.js");
+
+var _sass2 = _interopRequireDefault(_sass);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+Vue.component("sass-compiler", {
+
+    props: {
+        template: {
+            type: String,
+            default: "#vue-sass-compiler"
+        }
+    },
+
+    data: function data() {
+        return {
+            compiler: null
+        };
+    },
+    created: function created() {
+        this.$options.template = this.template;
+
+        _sass2.default.setWorkerUrl("http://master.plentymarkets.com/documents/plugins/Ceres/resources/js/dist/sass.worker.js");
+    },
+    mounted: function mounted() {
+        this.$nextTick(function () {
+            console.log("COMPILER RDY");
+        });
+    },
+
+
+    methods: {
+        compileSass: function compileSass() {
+            this.compiler = new _sass2.default();
+
+            this.compiler.readFile("test.css", function (result) {
+                console.log(result);
+            });
+        }
+    }
+});
+
+},{"sass.js/dist/sass.js":7}],24:[function(require,module,exports){
 "use strict";
 
 Vue.component("container-item-list", {
@@ -14926,7 +15178,7 @@ Vue.component("container-item-list", {
     }
 });
 
-},{}],23:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 "use strict";
 
 Vue.component("address-input-group", {
@@ -14992,7 +15244,7 @@ Vue.component("address-input-group", {
     }
 });
 
-},{}],24:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -15352,7 +15604,7 @@ Vue.component("address-select", {
     }
 });
 
-},{"../../../helper/utils":108,"services/AddressFieldService":110,"services/ApiService":111,"services/ModalService":115,"services/TranslationService":117,"services/ValidationService":119}],25:[function(require,module,exports){
+},{"../../../helper/utils":110,"services/AddressFieldService":112,"services/ApiService":113,"services/ModalService":117,"services/TranslationService":119,"services/ValidationService":121}],27:[function(require,module,exports){
 "use strict";
 
 var _ValidationService = require("services/ValidationService");
@@ -15560,7 +15812,7 @@ Vue.component("create-update-address", {
     }
 });
 
-},{"services/NotificationService":116,"services/ValidationService":119}],26:[function(require,module,exports){
+},{"services/NotificationService":118,"services/ValidationService":121}],28:[function(require,module,exports){
 "use strict";
 
 Vue.component("invoice-address-select", {
@@ -15636,7 +15888,7 @@ Vue.component("invoice-address-select", {
     }
 });
 
-},{}],27:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 "use strict";
 
 Vue.component("shipping-address-select", {
@@ -15678,7 +15930,7 @@ Vue.component("shipping-address-select", {
     }
 });
 
-},{}],28:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 "use strict";
 
 var _ValidationService = require("services/ValidationService");
@@ -15801,7 +16053,7 @@ Vue.component("contact-form", {
     }
 });
 
-},{"services/ApiService":111,"services/NotificationService":116,"services/TranslationService":117,"services/ValidationService":119}],29:[function(require,module,exports){
+},{"services/ApiService":113,"services/NotificationService":118,"services/TranslationService":119,"services/ValidationService":121}],31:[function(require,module,exports){
 "use strict";
 
 Vue.component("contact-map", {
@@ -15878,7 +16130,7 @@ Vue.component("contact-map", {
     }
 });
 
-},{}],30:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 "use strict";
 
 var CountryService = require("services/CountryService");
@@ -15965,7 +16217,7 @@ Vue.component("country-select", {
     }
 });
 
-},{"services/CountryService":113}],31:[function(require,module,exports){
+},{"services/CountryService":115}],33:[function(require,module,exports){
 "use strict";
 
 var _utils = require("../../helper/utils");
@@ -16108,7 +16360,7 @@ Vue.component("registration", {
     }
 });
 
-},{"../../helper/utils":108,"services/ApiService":111,"services/ModalService":115,"services/NotificationService":116,"services/TranslationService":117,"services/ValidationService":119}],32:[function(require,module,exports){
+},{"../../helper/utils":110,"services/ApiService":113,"services/ModalService":117,"services/NotificationService":118,"services/TranslationService":119,"services/ValidationService":121}],34:[function(require,module,exports){
 "use strict";
 
 var _ValidationService = require("services/ValidationService");
@@ -16213,7 +16465,7 @@ Vue.component("reset-password-form", {
 
 });
 
-},{"services/ApiService":111,"services/NotificationService":116,"services/TranslationService":117,"services/ValidationService":119}],33:[function(require,module,exports){
+},{"services/ApiService":113,"services/NotificationService":118,"services/TranslationService":119,"services/ValidationService":121}],35:[function(require,module,exports){
 "use strict";
 
 var _AddressFieldService = require("services/AddressFieldService");
@@ -16318,7 +16570,7 @@ Vue.component("salutation-select", {
     }
 });
 
-},{"services/AddressFieldService":110}],34:[function(require,module,exports){
+},{"services/AddressFieldService":112}],36:[function(require,module,exports){
 "use strict";
 
 var _ValidationService = require("services/ValidationService");
@@ -16369,7 +16621,7 @@ Vue.component("guest-login", {
     }
 });
 
-},{"services/ApiService":111,"services/ValidationService":119}],35:[function(require,module,exports){
+},{"services/ApiService":113,"services/ValidationService":121}],37:[function(require,module,exports){
 "use strict";
 
 var _ValidationService = require("services/ValidationService");
@@ -16550,7 +16802,7 @@ Vue.component("login", {
     }
 });
 
-},{"services/ApiService":111,"services/ModalService":115,"services/NotificationService":116,"services/TranslationService":117,"services/ValidationService":119}],36:[function(require,module,exports){
+},{"services/ApiService":113,"services/ModalService":117,"services/NotificationService":118,"services/TranslationService":119,"services/ValidationService":121}],38:[function(require,module,exports){
 "use strict";
 
 Vue.component("login-view", {
@@ -16570,7 +16822,7 @@ Vue.component("login-view", {
     }
 });
 
-},{}],37:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 "use strict";
 
 var _ValidationService = require("services/ValidationService");
@@ -16629,7 +16881,7 @@ Vue.component("user-login-handler", {
     }
 });
 
-},{"services/ApiService":111,"services/ValidationService":119}],38:[function(require,module,exports){
+},{"services/ApiService":113,"services/ValidationService":121}],40:[function(require,module,exports){
 "use strict";
 
 var _TranslationService = require("services/TranslationService");
@@ -16717,7 +16969,7 @@ Vue.component("add-to-wish-list", {
     }
 });
 
-},{"services/NotificationService":116,"services/TranslationService":117}],39:[function(require,module,exports){
+},{"services/NotificationService":118,"services/TranslationService":119}],41:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -16768,7 +17020,7 @@ Vue.component("graduated-prices", {
     }
 });
 
-},{}],40:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -16952,7 +17204,7 @@ Vue.component("item-image-carousel", {
     }
 });
 
-},{"../../helper/utils":108,"services/TranslationService":117}],41:[function(require,module,exports){
+},{"../../helper/utils":110,"services/TranslationService":119}],43:[function(require,module,exports){
 "use strict";
 
 Vue.component("order-properties", {
@@ -16973,7 +17225,7 @@ Vue.component("order-properties", {
     methods: Vuex.mapMutations(["setVariationOrderProperty"])
 });
 
-},{}],42:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -17183,7 +17435,7 @@ Vue.component("quantity-input", {
     }
 });
 
-},{"../../helper/debounce":104,"../../helper/number":106,"../../helper/utils":108,"../../services/TranslationService":117}],43:[function(require,module,exports){
+},{"../../helper/debounce":106,"../../helper/number":108,"../../helper/utils":110,"../../services/TranslationService":119}],45:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -17226,7 +17478,7 @@ Vue.component("single-item", {
     }
 });
 
-},{}],44:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 "use strict";
 
 var ApiService = require("services/ApiService");
@@ -17416,7 +17668,7 @@ Vue.component("variation-select", {
 
 });
 
-},{"services/ApiService":111}],45:[function(require,module,exports){
+},{"services/ApiService":113}],47:[function(require,module,exports){
 "use strict";
 
 Vue.component("category-image-carousel", {
@@ -17526,7 +17778,7 @@ Vue.component("category-image-carousel", {
     }
 });
 
-},{}],46:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 "use strict";
 
 Vue.component("category-item", {
@@ -17582,7 +17834,7 @@ Vue.component("category-item", {
 
 });
 
-},{}],47:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 "use strict";
 
 Vue.component("item-lazy-img", {
@@ -17612,7 +17864,7 @@ Vue.component("item-lazy-img", {
     }
 });
 
-},{}],48:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 "use strict";
 
 Vue.component("item-list", {
@@ -17644,7 +17896,7 @@ Vue.component("item-list", {
     }
 });
 
-},{}],49:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 "use strict";
 
 var _UrlService = require("services/UrlService");
@@ -17697,7 +17949,7 @@ Vue.component("item-list-sorting", {
     }
 });
 
-},{"services/UrlService":118}],50:[function(require,module,exports){
+},{"services/UrlService":120}],52:[function(require,module,exports){
 "use strict";
 
 var _UrlService = require("services/UrlService");
@@ -17819,7 +18071,7 @@ Vue.component("item-search", {
     }
 });
 
-},{"services/TranslationService":117,"services/UrlService":118}],51:[function(require,module,exports){
+},{"services/TranslationService":119,"services/UrlService":120}],53:[function(require,module,exports){
 "use strict";
 
 var accounting = require("accounting");
@@ -17870,7 +18122,7 @@ Vue.component("item-store-special", {
     }
 });
 
-},{"accounting":1}],52:[function(require,module,exports){
+},{"accounting":1}],54:[function(require,module,exports){
 "use strict";
 
 var _UrlService = require("services/UrlService");
@@ -17920,7 +18172,7 @@ Vue.component("items-per-page", {
     }
 });
 
-},{"services/UrlService":118}],53:[function(require,module,exports){
+},{"services/UrlService":120}],55:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -17994,7 +18246,7 @@ Vue.component("pagination", {
     }
 });
 
-},{"services/UrlService":118}],54:[function(require,module,exports){
+},{"services/UrlService":120}],56:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -18044,7 +18296,7 @@ Vue.component("item-filter", {
     }
 });
 
-},{}],55:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 "use strict";
 
 var _UrlService = require("services/UrlService");
@@ -18105,7 +18357,7 @@ Vue.component("item-filter-list", {
     }
 });
 
-},{"services/UrlService":118}],56:[function(require,module,exports){
+},{"services/UrlService":120}],58:[function(require,module,exports){
 "use strict";
 
 Vue.component("item-filter-tag-list", {
@@ -18132,7 +18384,7 @@ Vue.component("item-filter-tag-list", {
     }
 });
 
-},{}],57:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 "use strict";
 
 var _TranslationService = require("services/TranslationService");
@@ -18233,7 +18485,7 @@ Vue.component("account-settings", {
 
 });
 
-},{"services/ApiService":111,"services/ModalService":115,"services/NotificationService":116,"services/TranslationService":117}],58:[function(require,module,exports){
+},{"services/ApiService":113,"services/ModalService":117,"services/NotificationService":118,"services/TranslationService":119}],60:[function(require,module,exports){
 "use strict";
 
 var _ValidationService = require("services/ValidationService");
@@ -18486,7 +18738,7 @@ Vue.component("bank-data-select", {
     }
 });
 
-},{"services/ApiService":111,"services/ModalService":115,"services/NotificationService":116,"services/TranslationService":117,"services/ValidationService":119}],59:[function(require,module,exports){
+},{"services/ApiService":113,"services/ModalService":117,"services/NotificationService":118,"services/TranslationService":119,"services/ValidationService":121}],61:[function(require,module,exports){
 "use strict";
 
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
@@ -18615,7 +18867,7 @@ Vue.component("change-payment-method", {
 
 });
 
-},{"services/ApiService":111,"services/ModalService":115,"services/TranslationService":117}],60:[function(require,module,exports){
+},{"services/ApiService":113,"services/ModalService":117,"services/TranslationService":119}],62:[function(require,module,exports){
 "use strict";
 
 Vue.component("history", {
@@ -18648,7 +18900,7 @@ Vue.component("history", {
     }
 });
 
-},{}],61:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 "use strict";
 
 var _TranslationService = require("services/TranslationService");
@@ -18707,7 +18959,7 @@ Vue.component("order-history", {
     }
 });
 
-},{"services/ApiService":111,"services/TranslationService":117}],62:[function(require,module,exports){
+},{"services/ApiService":113,"services/TranslationService":119}],64:[function(require,module,exports){
 "use strict";
 
 var _TranslationService = require("services/TranslationService");
@@ -18765,7 +19017,7 @@ Vue.component("order-return-history", {
     }
 });
 
-},{"services/ApiService":111,"services/NotificationService":116,"services/TranslationService":117}],63:[function(require,module,exports){
+},{"services/ApiService":113,"services/NotificationService":118,"services/TranslationService":119}],65:[function(require,module,exports){
 "use strict";
 
 var _TranslationService = require("services/TranslationService");
@@ -18843,7 +19095,7 @@ Vue.component("order-return-history-item", {
     }
 });
 
-},{"services/TranslationService":117}],64:[function(require,module,exports){
+},{"services/TranslationService":119}],66:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -18899,7 +19151,7 @@ Vue.component("order-return", {
     }, Vuex.mapMutations(["updateOrderReturnNote"]), Vuex.mapActions(["sendOrderReturn"]))
 });
 
-},{}],65:[function(require,module,exports){
+},{}],67:[function(require,module,exports){
 "use strict";
 
 Vue.component("order-return-item", {
@@ -18958,7 +19210,7 @@ Vue.component("order-return-item", {
     }
 });
 
-},{}],66:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -19104,7 +19356,7 @@ Vue.component("mobile-navigation", {
     }
 });
 
-},{}],67:[function(require,module,exports){
+},{}],69:[function(require,module,exports){
 "use strict";
 
 var _ExceptionMap = require("exceptions/ExceptionMap");
@@ -19184,7 +19436,7 @@ Vue.component("notifications", {
     }
 });
 
-},{"exceptions/ExceptionMap":89,"services/NotificationService":116,"services/TranslationService":117}],68:[function(require,module,exports){
+},{"exceptions/ExceptionMap":91,"services/NotificationService":118,"services/TranslationService":119}],70:[function(require,module,exports){
 "use strict";
 
 var _utils = require("../../helper/utils");
@@ -19289,7 +19541,7 @@ Vue.component("popper", {
     }
 });
 
-},{"../../helper/dom":105,"../../helper/utils":108,"popper.js":5,"services/ModalService":115}],69:[function(require,module,exports){
+},{"../../helper/dom":107,"../../helper/utils":110,"popper.js":5,"services/ModalService":117}],71:[function(require,module,exports){
 "use strict";
 
 Vue.component("shipping-country-select", {
@@ -19318,7 +19570,7 @@ Vue.component("shipping-country-select", {
     }
 });
 
-},{}],70:[function(require,module,exports){
+},{}],72:[function(require,module,exports){
 "use strict";
 
 var ApiService = require("services/ApiService");
@@ -19340,7 +19592,7 @@ Vue.component("shop-country-settings", {
     }
 });
 
-},{"services/ApiService":111}],71:[function(require,module,exports){
+},{"services/ApiService":113}],73:[function(require,module,exports){
 "use strict";
 
 var WaitScreenService = require("services/WaitScreenService");
@@ -19381,7 +19633,7 @@ Vue.component("wait-screen", {
     }
 });
 
-},{"services/WaitScreenService":120}],72:[function(require,module,exports){
+},{"services/WaitScreenService":122}],74:[function(require,module,exports){
 "use strict";
 
 var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
@@ -19441,7 +19693,7 @@ Vue.component("wish-list", {
     }, Vuex.mapActions(["initWishListItems", "removeWishListItem"]))
 });
 
-},{"services/NotificationService":116,"services/TranslationService":117}],73:[function(require,module,exports){
+},{"services/NotificationService":118,"services/TranslationService":119}],75:[function(require,module,exports){
 "use strict";
 
 Vue.component("wish-list-count", {
@@ -19460,7 +19712,7 @@ Vue.component("wish-list-count", {
     }
 });
 
-},{}],74:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 "use strict";
 
 var _number = require("../../helper/number");
@@ -19473,7 +19725,7 @@ Vue.directive("basket-item-quantity", {
     }
 });
 
-},{"../../helper/number":106}],75:[function(require,module,exports){
+},{"../../helper/number":108}],77:[function(require,module,exports){
 "use strict";
 
 Vue.directive("basket-item-sum", {
@@ -19482,7 +19734,7 @@ Vue.directive("basket-item-sum", {
     }
 });
 
-},{}],76:[function(require,module,exports){
+},{}],78:[function(require,module,exports){
 "use strict";
 
 Vue.directive("toggle-basket-preview", {
@@ -19501,7 +19753,7 @@ Vue.directive("toggle-basket-preview", {
     }
 });
 
-},{}],77:[function(require,module,exports){
+},{}],79:[function(require,module,exports){
 "use strict";
 
 var ApiService = require("services/ApiService");
@@ -19525,7 +19777,7 @@ Vue.directive("logout", {
     }
 });
 
-},{"services/ApiService":111}],78:[function(require,module,exports){
+},{"services/ApiService":113}],80:[function(require,module,exports){
 "use strict";
 
 Vue.directive("waiting-animation", {
@@ -19547,7 +19799,7 @@ Vue.directive("waiting-animation", {
     }
 });
 
-},{}],79:[function(require,module,exports){
+},{}],81:[function(require,module,exports){
 "use strict";
 
 Vue.directive("waiting-animation-infinite", {
@@ -19561,7 +19813,7 @@ Vue.directive("waiting-animation-infinite", {
     }
 });
 
-},{}],80:[function(require,module,exports){
+},{}],82:[function(require,module,exports){
 "use strict";
 
 Vue.directive("is-loading-watcher", {
@@ -19576,7 +19828,7 @@ Vue.directive("is-loading-watcher", {
     }
 });
 
-},{}],81:[function(require,module,exports){
+},{}],83:[function(require,module,exports){
 "use strict";
 
 Vue.directive("update-sidenav-selection", {
@@ -19616,7 +19868,7 @@ Vue.directive("update-sidenav-selection", {
     }
 });
 
-},{}],82:[function(require,module,exports){
+},{}],84:[function(require,module,exports){
 "use strict";
 
 Vue.directive("hover-mega-menu", {
@@ -19646,7 +19898,7 @@ Vue.directive("hover-mega-menu", {
     }
 });
 
-},{}],83:[function(require,module,exports){
+},{}],85:[function(require,module,exports){
 "use strict";
 
 Vue.directive("open-mobile-navigation", {
@@ -19658,7 +19910,7 @@ Vue.directive("open-mobile-navigation", {
     }
 });
 
-},{}],84:[function(require,module,exports){
+},{}],86:[function(require,module,exports){
 "use strict";
 
 var _index = require("store/index.js");
@@ -19711,7 +19963,7 @@ Vue.directive("render-category", {
     }
 });
 
-},{"store/index.js":121}],85:[function(require,module,exports){
+},{"store/index.js":123}],87:[function(require,module,exports){
 "use strict";
 
 Vue.directive("change-lang", {
@@ -19725,7 +19977,7 @@ Vue.directive("change-lang", {
     }
 });
 
-},{}],86:[function(require,module,exports){
+},{}],88:[function(require,module,exports){
 "use strict";
 
 Vue.directive("scroll-to-top", {
@@ -19736,7 +19988,7 @@ Vue.directive("scroll-to-top", {
     }
 });
 
-},{}],87:[function(require,module,exports){
+},{}],89:[function(require,module,exports){
 "use strict";
 
 var checkElement = function checkElement(el, breakpoint) {
@@ -19775,7 +20027,7 @@ Vue.directive("stick-in-parent", {
     }
 });
 
-},{}],88:[function(require,module,exports){
+},{}],90:[function(require,module,exports){
 "use strict";
 
 var _utils = require("../../helper/utils");
@@ -19822,7 +20074,7 @@ Vue.directive("tooltip", {
     }
 });
 
-},{"../../helper/utils":108}],89:[function(require,module,exports){
+},{"../../helper/utils":110}],91:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19832,21 +20084,21 @@ var exceptionMap = exports.exceptionMap = new Map([["1", "basketItemNotAdded"], 
 
 exports.default = exceptionMap;
 
-},{}],90:[function(require,module,exports){
+},{}],92:[function(require,module,exports){
 "use strict";
 
 Vue.filter("arrayFirst", function (array) {
     return array[0];
 });
 
-},{}],91:[function(require,module,exports){
+},{}],93:[function(require,module,exports){
 "use strict";
 
 Vue.filter("attachText", function (item, text) {
     return text + item;
 });
 
-},{}],92:[function(require,module,exports){
+},{}],94:[function(require,module,exports){
 "use strict";
 
 var accounting = require("accounting");
@@ -19866,7 +20118,7 @@ Vue.filter("currency", function (price) {
     return accounting.formatMoney(price, options);
 });
 
-},{"accounting":1}],93:[function(require,module,exports){
+},{"accounting":1}],95:[function(require,module,exports){
 "use strict";
 
 // for docs see https://github.com/brockpetrie/vue-moment
@@ -19998,7 +20250,7 @@ var dateFilter = function dateFilter() {
 Vue.filter("moment", dateFilter);
 Vue.filter("date", dateFilter);
 
-},{}],94:[function(require,module,exports){
+},{}],96:[function(require,module,exports){
 "use strict";
 
 Vue.filter("graduatedPrice", function (item, quantity) {
@@ -20022,7 +20274,7 @@ Vue.filter("graduatedPrice", function (item, quantity) {
     return returnPrice || item.prices.default.unitPrice.value;
 });
 
-},{}],95:[function(require,module,exports){
+},{}],97:[function(require,module,exports){
 "use strict";
 
 Vue.filter("itemImage", function (itemImages, highestPosition) {
@@ -20045,7 +20297,7 @@ Vue.filter("itemImage", function (itemImages, highestPosition) {
     }).url;
 });
 
-},{}],96:[function(require,module,exports){
+},{}],98:[function(require,module,exports){
 "use strict";
 
 Vue.filter("itemImages", function (images, accessor) {
@@ -20070,7 +20322,7 @@ Vue.filter("itemImages", function (images, accessor) {
     return imageUrls;
 });
 
-},{}],97:[function(require,module,exports){
+},{}],99:[function(require,module,exports){
 "use strict";
 
 Vue.filter("itemName", function (_ref) {
@@ -20103,7 +20355,7 @@ Vue.filter("itemName", function (_ref) {
     return itemName;
 });
 
-},{}],98:[function(require,module,exports){
+},{}],100:[function(require,module,exports){
 "use strict";
 
 Vue.filter("itemURL", function (item) {
@@ -20135,7 +20387,7 @@ Vue.filter("itemURL", function (item) {
     return link + suffix;
 });
 
-},{}],99:[function(require,module,exports){
+},{}],101:[function(require,module,exports){
 "use strict";
 
 var _utils = require("../helper/utils");
@@ -20156,7 +20408,7 @@ Vue.filter("numberFormat", function (number, decimals, separator) {
     return number.toFixed(decimals).replace(".", separator);
 });
 
-},{"../helper/number":106,"../helper/utils":108}],100:[function(require,module,exports){
+},{"../helper/number":108,"../helper/utils":110}],102:[function(require,module,exports){
 "use strict";
 
 Vue.filter("propertySurcharge", function (properties, propertyId) {
@@ -20175,7 +20427,7 @@ Vue.filter("propertySurcharge", function (properties, propertyId) {
     return 0;
 });
 
-},{}],101:[function(require,module,exports){
+},{}],103:[function(require,module,exports){
 "use strict";
 
 Vue.filter("propertySurchargeSum", function (item) {
@@ -20215,7 +20467,7 @@ Vue.filter("propertySurchargeSum", function (item) {
     return sum;
 });
 
-},{}],102:[function(require,module,exports){
+},{}],104:[function(require,module,exports){
 "use strict";
 
 var _TranslationService = require("services/TranslationService");
@@ -20228,7 +20480,7 @@ Vue.filter("translate", function (value, params) {
     return _TranslationService2.default.translate(value, params);
 });
 
-},{"services/TranslationService":117}],103:[function(require,module,exports){
+},{"services/TranslationService":119}],105:[function(require,module,exports){
 "use strict";
 
 Vue.filter("truncate", function (string, value) {
@@ -20238,7 +20490,7 @@ Vue.filter("truncate", function (string, value) {
     return string;
 });
 
-},{}],104:[function(require,module,exports){
+},{}],106:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20276,7 +20528,7 @@ function debounce(callback, timeout) {
     return callback;
 }
 
-},{"./utils":108}],105:[function(require,module,exports){
+},{"./utils":110}],107:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20323,7 +20575,7 @@ function is(element, selector) {
     return element.matches(selector);
 }
 
-},{}],106:[function(require,module,exports){
+},{}],108:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20400,48 +20652,10 @@ function formatFloat(value, decimals, round) {
     return parseFloat(value.toFixed(decimals));
 }
 
-},{"./utils":108}],107:[function(require,module,exports){
+},{"./utils":110}],109:[function(require,module,exports){
 "use strict";
 
-Object.defineProperty(exports, "__esModule", {
-    value: true
-});
-exports.replaceAll = replaceAll;
-exports.capitalize = capitalize;
-
-var _utils = require("./utils");
-
-/**
- * Replace all occurrences of a string
- *
- * @param {string}  input           The string to apply replacements on
- * @param {string}  search          Substring to be replaced
- * @param {string}  replacement     String to replace each match with
- *
- * @returns {string}
- */
-function replaceAll(input, search, replacement) {
-    if ((0, _utils.isNullOrUndefined)(input)) {
-        return input;
-    }
-    return (input + "").split(search).join(replacement);
-}
-
-/**
- * Capitalize first letter of a string
- *
- * @param {string}  input   The string to capitalize
- *
- * @returns {string}
- */
-function capitalize(input) {
-    if ((0, _utils.isNullOrUndefined)(input)) {
-        return input;
-    }
-    return ("" + input).charAt(0).toUpperCase() + ("" + input).substr(1);
-}
-
-},{"./utils":108}],108:[function(require,module,exports){
+},{}],110:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20515,7 +20729,7 @@ function defaultValue(input, defaultValue) {
     return input;
 }
 
-},{}],109:[function(require,module,exports){
+},{}],111:[function(require,module,exports){
 "use strict";
 
 var browserDetect = require("detect-browser");
@@ -20661,7 +20875,7 @@ var init = function ($, window, document) {
     window.CeresMain = new CeresMain();
 }(jQuery, window, document);
 
-},{"detect-browser":2}],110:[function(require,module,exports){
+},{"detect-browser":2}],112:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20728,7 +20942,7 @@ function isAddressFieldEnabled(countryId, addressType, field) {
 
 exports.default = { isAddressFieldEnabled: isAddressFieldEnabled };
 
-},{}],111:[function(require,module,exports){
+},{}],113:[function(require,module,exports){
 "use strict";
 
 var NotificationService = require("services/NotificationService");
@@ -20872,7 +21086,7 @@ module.exports = function ($) {
     }
 }(jQuery);
 
-},{"services/NotificationService":116,"services/WaitScreenService":120}],112:[function(require,module,exports){
+},{"services/NotificationService":118,"services/WaitScreenService":122}],114:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21000,7 +21214,7 @@ exports.default = {
     updateCategoryHtml: updateCategoryHtml
 };
 
-},{"services/ApiService":111,"store/index.js":121}],113:[function(require,module,exports){
+},{"services/ApiService":113,"store/index.js":123}],115:[function(require,module,exports){
 "use strict";
 
 module.exports = function ($) {
@@ -21057,7 +21271,7 @@ module.exports = function ($) {
     }
 }(jQuery);
 
-},{}],114:[function(require,module,exports){
+},{}],116:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21094,7 +21308,7 @@ exports.default = {
     updateItemListUrlParams: updateItemListUrlParams
 };
 
-},{"services/UrlService":118}],115:[function(require,module,exports){
+},{"services/UrlService":120}],117:[function(require,module,exports){
 "use strict";
 
 module.exports = function ($) {
@@ -21214,7 +21428,7 @@ module.exports = function ($) {
     }
 }(jQuery);
 
-},{}],116:[function(require,module,exports){
+},{}],118:[function(require,module,exports){
 "use strict";
 
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
@@ -21381,7 +21595,7 @@ module.exports = function ($) {
     }
 }(jQuery);
 
-},{}],117:[function(require,module,exports){
+},{}],119:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21500,7 +21714,7 @@ var TranslationService = function ($) {
 
 exports.default = TranslationService;
 
-},{"../helper/strings":107,"../helper/utils":108}],118:[function(require,module,exports){
+},{"../helper/strings":109,"../helper/utils":110}],120:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21566,7 +21780,7 @@ function setUrlParam(key, value) {
 
 exports.default = { setUrlParam: setUrlParam, setUrlParams: setUrlParams, getUrlParams: getUrlParams };
 
-},{"jquery":3}],119:[function(require,module,exports){
+},{"jquery":3}],121:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21801,7 +22015,7 @@ function _eval(input) {
 
 exports.default = { validate: validate, getInvalidFields: getInvalidFields, markInvalidFields: markInvalidFields, markFailedValidationFields: markFailedValidationFields, unmarkAllFields: unmarkAllFields };
 
-},{"jquery":3}],120:[function(require,module,exports){
+},{"jquery":3}],122:[function(require,module,exports){
 "use strict";
 
 module.exports = function ($) {
@@ -21844,7 +22058,7 @@ module.exports = function ($) {
     }
 }(jQuery);
 
-},{}],121:[function(require,module,exports){
+},{}],123:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21915,7 +22129,7 @@ window.ceresStore = store;
 
 exports.default = store;
 
-},{"store/modules/AddressModule":122,"store/modules/BasketModule":123,"store/modules/CheckoutModule":124,"store/modules/ItemListModule":125,"store/modules/LocalizationModule":126,"store/modules/NavigationModule":127,"store/modules/OrderReturnModule":128,"store/modules/SingleItemModule":129,"store/modules/UserModule":130,"store/modules/WishListModule":131,"vue-script2":7}],122:[function(require,module,exports){
+},{"store/modules/AddressModule":124,"store/modules/BasketModule":125,"store/modules/CheckoutModule":126,"store/modules/ItemListModule":127,"store/modules/LocalizationModule":128,"store/modules/NavigationModule":129,"store/modules/OrderReturnModule":130,"store/modules/SingleItemModule":131,"store/modules/UserModule":132,"store/modules/WishListModule":133,"vue-script2":8}],124:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22220,7 +22434,7 @@ exports.default = {
     getters: getters
 };
 
-},{"services/ApiService":111}],123:[function(require,module,exports){
+},{"services/ApiService":113}],125:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22447,7 +22661,7 @@ exports.default = {
     actions: actions
 };
 
-},{"services/ApiService":111,"services/NotificationService":116,"services/TranslationService":117}],124:[function(require,module,exports){
+},{"services/ApiService":113,"services/NotificationService":118,"services/TranslationService":119}],126:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22603,7 +22817,7 @@ exports.default = {
     getters: getters
 };
 
-},{"services/ApiService":111}],125:[function(require,module,exports){
+},{"services/ApiService":113}],127:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22805,7 +23019,7 @@ exports.default = {
     getters: getters
 };
 
-},{"services/ApiService":111,"services/ItemListUrlService":114}],126:[function(require,module,exports){
+},{"services/ApiService":113,"services/ItemListUrlService":116}],128:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22868,7 +23082,7 @@ exports.default = {
     actions: actions
 };
 
-},{"services/ApiService":111}],127:[function(require,module,exports){
+},{"services/ApiService":113}],129:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23042,7 +23256,7 @@ exports.default = {
     getters: getters
 };
 
-},{"services/CategoryService":112}],128:[function(require,module,exports){
+},{"services/CategoryService":114}],130:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23140,7 +23354,7 @@ exports.default = {
     getters: getters
 };
 
-},{"services/ApiService":111}],129:[function(require,module,exports){
+},{"services/ApiService":113}],131:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23266,7 +23480,7 @@ exports.default = {
     getters: getters
 };
 
-},{}],130:[function(require,module,exports){
+},{}],132:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23309,7 +23523,7 @@ exports.default = {
     getters: getters
 };
 
-},{}],131:[function(require,module,exports){
+},{}],133:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23421,7 +23635,7 @@ exports.default = {
     getters: getters
 };
 
-},{"services/ApiService":111}]},{},[109,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,34,35,36,37,31,32,33,38,39,40,41,42,43,44,45,46,54,55,56,47,48,49,50,52,51,53,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,121,122,123,124,125,126,127,128,129,130,131])
+},{"services/ApiService":113}]},{},[111,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,36,37,38,39,33,34,35,40,41,42,43,44,45,46,47,48,56,57,58,49,50,51,52,54,53,55,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,123,124,125,126,127,128,129,130,131,132,133])
 
 
 //# sourceMappingURL=ceres-app.js.map

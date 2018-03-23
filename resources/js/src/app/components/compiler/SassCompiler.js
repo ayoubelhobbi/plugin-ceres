@@ -1,5 +1,4 @@
-const Compiler            = require("sass.js/dist/sass.js");
-const Worker = require("sass.js/dist/sass.worker.js");
+import Compiler from "sass.js/dist/sass.js";
 
 Vue.component("sass-compiler", {
 
@@ -20,6 +19,8 @@ Vue.component("sass-compiler", {
     created()
     {
         this.$options.template = this.template;
+
+        Compiler.setWorkerUrl("http://master.plentymarkets.com/documents/plugins/Ceres/resources/js/dist/sass.worker.js");
     },
 
     mounted()
@@ -34,9 +35,9 @@ Vue.component("sass-compiler", {
     {
         compileSass()
 		{
-            this.compiler = new Compiler(this.Worker);
+            this.compiler = new Compiler();
 
-            this.compiler.readFile("../../scss/Ceres.scss", result =>
+            this.compiler.readFile("test.css", result =>
 			{
                 console.log(result);
             });
