@@ -11,6 +11,7 @@
     {{ component( "Ceres::Basket.Components.BasketList" ) }}
     {{ component( "Ceres::Basket.Components.Coupon" ) }}
     {{ component( "Ceres::Basket.Components.BasketTotals" ) }}
+    {{ component( "Ceres::Compiler.SassCompiler" ) }}
 
     <div v-cloak class="page-content basket container-max" itemtype="http://schema.org/Product http://schema.org/Thing http://schema.org/Offer http://schema.org/PriceSpecification">
 
@@ -19,6 +20,8 @@
                 <h1 class="h2">{{ trans("Ceres::Template.basket") }}</h1>
             </div>
         </div>
+
+        <sass-compiler></sass-compiler>
 
         <hr>
 
