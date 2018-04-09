@@ -1,40 +1,40 @@
 {
     "version"           : "2.6.0",
-    "name"              : "Ceres",
-    "marketplaceName"   : {"de": "Ceres","en": "Ceres"},
-    "description"       : "This is the official Ceres plugin developed by plentymarkets. Ceres is the default template plugin for plentymarkets 7 online stores.",
+    "name"              : "CeresTest",
+    "marketplaceName"   : {"de": "CeresTest","en": "CeresTest"},
+    "description"       : "This is the official CeresTest plugin developed by plentymarkets. CeresTest is the default template plugin for plentymarkets 7 online stores.",
     "author"            : "plentymarkets GmbH",
     "license"           : "AGPL-3.0",
     "pluginIcon"        : "icon_plugin_xs.png",
     "price"             : 0.00,
-    "shortDescription"  : {"de": "Das offizielle, von plentymarkets entwickelte Template-Plugin. Ceres ist das Standard-Template für plentymarkets 7 Webshops. ","en": "The official template plugin developed by plentymarkets. Ceres is the default template for plentymarkets 7 online stores."},
+    "shortDescription"  : {"de": "Das offizielle, von plentymarkets entwickelte Template-Plugin. CeresTest ist das Standard-Template für plentymarkets 7 Webshops. ","en": "The official template plugin developed by plentymarkets. CeresTest is the default template for plentymarkets 7 online stores."},
     "authorIcon"        : "icon_author_xs.png",
     "email"             : "sales@plentymarkets.com",
     "phone"             : "+49 561 98 681 100",
     "categories"        : ["3517"],
-    "keywords"          : ["plentymarkets", "plugins", "layout", "template", "ceres"],
+    "keywords"          : ["plentymarkets", "plugins", "layout", "template", "CeresTest"],
     "type"              : "template",
     "require"           : ["IO"],
-    "namespace"         : "Ceres",
-    "serviceProvider"   : "Ceres\\Providers\\TemplateServiceProvider",
+    "namespace"         : "CeresTest",
+    "serviceProvider"   : "CeresTest\\Providers\\TemplateServiceProvider",
     "javaScriptFiles"   : [],
     "runOnBuild"        : [
-      "Ceres\\Migrations\\WebshopSettingsMigration_0_0_1"
+      "CeresTest\\Migrations\\WebshopSettingsMigration_0_0_1"
     ],
     "dataProviders"     :
     [
         {
-            "key":"Ceres\\Containers\\CeresItemListContainer1",
+            "key":"CeresTest\\Containers\\CeresTestItemListContainer1",
             "name":"First item list",
             "description":"Display a configurable list of items in your online store"
         },
         {
-            "key":"Ceres\\Containers\\CeresItemListContainer2",
+            "key":"CeresTest\\Containers\\CeresTestItemListContainer2",
             "name":"Second item list",
             "description":"Display a configurable list of items in your online store"
         },
         {
-            "key":"Ceres\\Containers\\CeresItemListContainer3",
+            "key":"CeresTest\\Containers\\CeresTestItemListContainer3",
             "name":"Third item list",
             "description":"Display a configurable list of items in your online store"
         }
@@ -44,12 +44,12 @@
         {
             "key"           : "Template.Style",
             "name"          : "Template: Style",
-            "description"   : "Add style to Ceres with a theme plugin."
+            "description"   : "Add style to CeresTest with a theme plugin."
         },
         {
             "key"           : "Template.StyleOverwrite",
             "name"          : "Template: Override style",
-            "description"   : "Override the default CSS file of Ceres."
+            "description"   : "Override the default CSS file of CeresTest."
         },
         {
             "key"           : "Script.Loader",
