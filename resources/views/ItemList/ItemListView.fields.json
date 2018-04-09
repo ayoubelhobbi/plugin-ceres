@@ -28,6 +28,7 @@
   "texts.*",
   "variation.id",
   "variation.name",
+  "variation.number",
   "variation.availability.names.*",
   "variation.availability.id",
   "variation.availability.averageDays",
