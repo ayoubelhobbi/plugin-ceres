@@ -37,6 +37,9 @@
                             <b>{{ trans("Ceres::Template.itemNumber") }}</b>
                             <span>${ currentVariation.variation.number }</span>
                         </span>
+                        {% if contactClass == 2 %}
+						    <span v-if="currentVariation.stock.net !== 0" :class="'availability tag availability_' + currentVariation.variation.availability.id">Noch <b>${ currentVariation.stock.net } verfügbar</b></span>
+						{% endif %}
                     </div>
 
                     <!-- Variation -->
@@ -142,6 +145,15 @@
                     <div class="tab-content">
                         {% if 'item.description' in itemData or 'all' in itemData %}
                             <div class="tab-pane active" :id="'details-' + currentVariation.variation.id" role="tabpanel" v-if="isDescriptionTabActive">
+                            <div class="youtubeVideo">
+							<div class="videoWrapper1">
+							
+		
+								<iframe v-for="(merk, index) in currentVariation.properties" width="690" height="387" v-bind:src="merk.texts.value" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+								
+	                        </div>
+                        </div>
+                            
                                 <div class="m-y-2" v-html="currentVariation.texts.description">
                                 </div>
                             </div>
@@ -159,7 +171,7 @@
                                 <table class="table table-striped table-hover table-sm">
                                     <tbody>
                                     {% if 'item.id' in itemData or 'all' in itemData %}
-                                        <tr>
+                                        <tr> 
                                             <td>{{ trans("Ceres::Template.itemId") }}</td>
                                             <td>${ currentVariation.item.id }</td>
                                         </tr>
