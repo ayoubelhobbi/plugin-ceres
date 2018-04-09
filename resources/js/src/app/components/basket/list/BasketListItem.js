@@ -28,9 +28,9 @@ Vue.component("basket-list-item", {
     {
         image()
         {
-            const img = this.$options.filters.itemImages(this.basketItem.variation.data.images, "urlPreview")[0];
+            const itemImages = this.$options.filters.itemImages(this.basketItem.variation.data.images, "urlPreview");
 
-            return img;
+            return this.$options.filters.itemImage(itemImages);
         },
 
         altText()
@@ -43,6 +43,23 @@ Vue.component("basket-list-item", {
         isInputLocked()
         {
             return this.waiting || this.isBasketLoading;
+        },
+
+        propertySurchargeSum()
+        {
+            let sum = 0;
+
+            for (const property of this.basketItem.basketItemOrderParams)
+            {
+                sum += this.$options.filters.propertySurcharge(this.basketItem.variation.data.properties, property.propertyId);
+            }
+
+            return sum;
+        },
+
+        itemTotalPrice()
+        {
+            return this.basketItem.quantity * (this.basketItem.variation.data.prices.default.unitPrice.value + this.propertySurchargeSum);
         },
 
         ...Vuex.mapState({
